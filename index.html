@@ -45,6 +45,7 @@
 
 <script>
 (function () {
+    var GO_KEY = "lapseGo";
     var READY_KEY = "ps4cacheReady";
     var stateEl = document.getElementById("state");
     var detEl = document.getElementById("det");
@@ -101,7 +102,8 @@
     }
     function go() {
         setState("loading lapse chain...", "warn");
-        location.replace(target);
+        try { localStorage.setItem(GO_KEY, "1"); } catch (e) {}
+        location.href = target;
     }
 
     runBtn.addEventListener("click", go, false);

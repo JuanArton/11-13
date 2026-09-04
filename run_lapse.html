@@ -27,6 +27,24 @@
   <div id="state">loading lapse chain...</div>
   <div id="out"></div>
 </div>
-<script type="module">import "./chain_lapse.js";</script>
+<script>
+(function () {
+    var ok = false;
+    try {
+        if (localStorage.getItem("lapseGo") === "1") {
+            localStorage.removeItem("lapseGo");
+            ok = true;
+        }
+    } catch (e) {}
+    if (!ok) {
+        location.replace("index.html");
+        return;
+    }
+    var s = document.createElement("script");
+    s.type = "module";
+    s.src = "./chain_lapse.js";
+    document.body.appendChild(s);
+})();
+</script>
 </body>
 </html>
