@@ -23,6 +23,10 @@
   }
   #actions button:disabled { opacity:.45; cursor:default; }
   #updateBtn { color:#d8c07f; }
+  #out { display:none; white-space:pre-wrap; font:12px/1.45 Consolas, monospace;
+         background:#11151b; border:1px solid #1e2732; border-radius:5px;
+         padding:10px 12px; height:calc(100vh - 160px); overflow-y:auto; margin-top:10px; }
+  #out.show { display:block; }
   #brand { text-align:center; padding:8px 10px; background:#0e1116;
            border-bottom:1px solid #1e2732; }
   #brand img { width:28px; height:28px; margin-right:8px; border-radius:50%;
@@ -41,24 +45,24 @@
     <button type="button" id="runBtn">Start exploit</button>
     <button type="button" id="updateBtn">Update cache</button>
   </div>
+  <div id="out"></div>
 </div>
 
 <script>
 (function () {
-    var GO_KEY = "lapseGo";
     var READY_KEY = "ps4cacheReady";
     var stateEl = document.getElementById("state");
     var detEl = document.getElementById("det");
     var cacheEl = document.getElementById("cache");
     var actionsEl = document.getElementById("actions");
+    var outEl = document.getElementById("out");
     var runBtn = document.getElementById("runBtn");
     var updateBtn = document.getElementById("updateBtn");
     function setState(t, c) { stateEl.textContent = t; stateEl.className = c || ""; }
     function setCache(t, ok) { cacheEl.textContent = t; cacheEl.className = ok ? "cacheok" : ""; }
     var updating = false;
     var bound = false;
-
-    try { localStorage.removeItem(GO_KEY); } catch (e) {}
+    var started = false;
 
     var key = null;
     var m = /PlayStation\s+4[\/ ](\d+)\.(\d+)/.exec(navigator.userAgent);
@@ -69,11 +73,11 @@
         key = m[1] + "." + ms;
     }
     var why = "";
-    var ok = false;
+    var fwOk = false;
     if (!key) {
         why = "user-agent is not a PlayStation 4";
     } else if (key === "12.02" || key === "12.00") {
-        ok = true;
+        fwOk = true;
         why = key + " lapse / 1200.bin";
     } else {
         why = key + " -- this host is 12.02 only";
@@ -81,9 +85,7 @@
     detEl.innerHTML = "firmware <b>" + (key || "unknown") + "</b>"
         + " &middot; " + why;
 
-    if (!ok) { setState("UNSUPPORTED FIRMWARE", "bad"); return; }
-
-    var target = "run_lapse.html" + location.search;
+    if (!fwOk) { setState("UNSUPPORTED FIRMWARE", "bad"); return; }
 
     var ac = window.applicationCache;
 
@@ -95,6 +97,7 @@
     }
     function hideMenu() { actionsEl.className = ""; }
     function showMenu(cacheMsg) {
+        if (started) return;
         markReady();
         updating = false;
         actionsEl.className = "show";
@@ -104,14 +107,22 @@
         if (cacheMsg) setCache(cacheMsg, true);
     }
     function go() {
+        if (started) return;
+        started = true;
+        hideMenu();
+        detEl.style.display = "none";
+        cacheEl.style.display = "none";
+        outEl.className = "show";
         setState("loading lapse chain...", "warn");
-        try { localStorage.setItem(GO_KEY, String(Date.now())); } catch (e) {}
-        location.href = target;
+        var s = document.createElement("script");
+        s.type = "module";
+        s.src = "./chain_lapse.js";
+        document.body.appendChild(s);
     }
 
     runBtn.addEventListener("click", go, false);
     updateBtn.addEventListener("click", function () {
-        if (updating || !ac) return;
+        if (started || updating || !ac) return;
         if (!navigator.onLine) {
             setCache("offline -- cannot update");
             return;
@@ -150,23 +161,28 @@
         if (!ac || bound) return;
         bound = true;
         ac.addEventListener("downloading", function () {
+            if (started) return;
             if (updating || !wasReady())
                 setCache("downloading files...");
         }, false);
         ac.addEventListener("progress", function (e) {
+            if (started) return;
             if (!(updating || !wasReady())) return;
             if (e && e.total)
                 setCache("caching " + Math.round((e.loaded / e.total) * 100) + "%");
         }, false);
         ac.addEventListener("cached", function () {
+            if (started) return;
             markReady();
             setCache("cached for offline use", true);
             showMenu("cached -- Start exploit or Update cache");
         }, false);
         ac.addEventListener("noupdate", function () {
+            if (started) return;
             if (updating) showMenu("already latest -- cached for offline");
         }, false);
         ac.addEventListener("updateready", function () {
+            if (started) return;
             try { ac.swapCache(); } catch (e) {}
             markReady();
             setCache("update downloaded", true);
@@ -174,6 +190,7 @@
             location.reload();
         }, false);
         ac.addEventListener("error", function () {
+            if (started) return;
             if (wasReady()) {
                 updating = false;
                 showMenu("cache update failed -- Start exploit still works");
@@ -183,6 +200,7 @@
             setState("CACHE FAILED", "bad");
         }, false);
         ac.addEventListener("obsolete", function () {
+            if (started) return;
             try { localStorage.removeItem(READY_KEY); } catch (e) {}
             setCache("old cache dropped -- reloading to fetch the new one");
             setState("CACHE OBSOLETE -- reloading...", "warn");
