@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" manifest="cache.appcache">
+<html lang="en" manifest="host.appcache">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -56,6 +56,9 @@
     function setState(t, c) { stateEl.textContent = t; stateEl.className = c || ""; }
     function setCache(t, ok) { cacheEl.textContent = t; cacheEl.className = ok ? "cacheok" : ""; }
     var updating = false;
+    var bound = false;
+
+    try { localStorage.removeItem(GO_KEY); } catch (e) {}
 
     var key = null;
     var m = /PlayStation\s+4[\/ ](\d+)\.(\d+)/.exec(navigator.userAgent);
@@ -81,6 +84,7 @@
     if (!ok) { setState("UNSUPPORTED FIRMWARE", "bad"); return; }
 
     var target = "run_lapse.html" + location.search;
+
     var ac = window.applicationCache;
 
     function markReady() {
@@ -93,7 +97,6 @@
     function showMenu(cacheMsg) {
         markReady();
         updating = false;
-        hideMenu();
         actionsEl.className = "show";
         runBtn.disabled = false;
         updateBtn.disabled = !ac || !navigator.onLine;
@@ -102,7 +105,7 @@
     }
     function go() {
         setState("loading lapse chain...", "warn");
-        try { localStorage.setItem(GO_KEY, "1"); } catch (e) {}
+        try { localStorage.setItem(GO_KEY, String(Date.now())); } catch (e) {}
         location.href = target;
     }
 
@@ -118,94 +121,103 @@
         updateBtn.disabled = true;
         setState("updating cache...", "warn");
         setCache("checking for latest files...");
-        try { ac.update(); } catch (e) {
-            updating = false;
-            setCache("update failed");
-            showMenu("cached -- update failed, try again");
+        var xhr = new XMLHttpRequest();
+        try {
+            xhr.open("GET", "host.appcache?t=" + Date.now(), true);
+            xhr.setRequestHeader("Cache-Control", "no-cache");
+            xhr.onload = function () {
+                try { ac.update(); } catch (e) {
+                    updating = false;
+                    showMenu("update failed -- try again");
+                }
+            };
+            xhr.onerror = function () {
+                try { ac.update(); } catch (e) {
+                    updating = false;
+                    showMenu("update failed -- try again");
+                }
+            };
+            xhr.send();
+        } catch (e) {
+            try { ac.update(); } catch (err) {
+                updating = false;
+                showMenu("update failed -- try again");
+            }
         }
     }, false);
 
-    function onFirstCached() {
-        markReady();
-        setCache("cached for offline use", true);
-        setState("CACHE DONE -- reopening...", "ok");
-        location.reload();
-    }
-
-    if (!ac || !document.documentElement.hasAttribute("manifest")) {
-        setCache("no cache manifest");
-        showMenu("no application cache -- Start exploit still works");
-        updateBtn.disabled = true;
-        return;
-    }
-
-    ac.addEventListener("downloading", function () {
-        if (updating || !wasReady())
-            setCache("downloading files...");
-    }, false);
-    ac.addEventListener("progress", function (e) {
-        if (!(updating || !wasReady())) return;
-        if (e && e.total)
-            setCache("caching " + Math.round((e.loaded / e.total) * 100) + "%");
-    }, false);
-    ac.addEventListener("cached", function () {
-        onFirstCached();
-    }, false);
-    ac.addEventListener("noupdate", function () {
-        if (updating) showMenu("already latest -- cached for offline");
-    }, false);
-    ac.addEventListener("updateready", function () {
-        try { ac.swapCache(); } catch (e) {}
-        markReady();
-        setCache("update downloaded", true);
-        setState("UPDATE READY -- reloading...", "ok");
-        location.reload();
-    }, false);
-    ac.addEventListener("error", function () {
-        if (wasReady()) {
-            updating = false;
-            showMenu("cache update failed -- Start exploit still works");
-            return;
-        }
-        setCache("cache failed");
-        setState("CACHE FAILED", "bad");
-    }, false);
-    ac.addEventListener("obsolete", function () {
-        try { localStorage.removeItem(READY_KEY); } catch (e) {}
-        setCache("cache obsolete");
-        setState("CACHE OBSOLETE -- reopen this page", "warn");
-        hideMenu();
-    }, false);
-
-    var idle = ac.status === ac.IDLE;
-    var uncached = ac.status === ac.UNCACHED;
-    if (wasReady() || idle) {
-        if (ac.status === ac.UPDATEREADY) {
-            try { ac.swapCache(); } catch (e) {}
-            location.reload();
-            return;
-        }
-        if (!navigator.onLine)
-            showMenu("offline -- from cache");
-        else
+    function bindAC(ac) {
+        if (!ac || bound) return;
+        bound = true;
+        ac.addEventListener("downloading", function () {
+            if (updating || !wasReady())
+                setCache("downloading files...");
+        }, false);
+        ac.addEventListener("progress", function (e) {
+            if (!(updating || !wasReady())) return;
+            if (e && e.total)
+                setCache("caching " + Math.round((e.loaded / e.total) * 100) + "%");
+        }, false);
+        ac.addEventListener("cached", function () {
+            markReady();
+            setCache("cached for offline use", true);
             showMenu("cached -- Start exploit or Update cache");
-        return;
-    }
+        }, false);
+        ac.addEventListener("noupdate", function () {
+            if (updating) showMenu("already latest -- cached for offline");
+        }, false);
+        ac.addEventListener("updateready", function () {
+            try { ac.swapCache(); } catch (e) {}
+            markReady();
+            setCache("update downloaded", true);
+            setState("UPDATE READY -- reloading...", "ok");
+            location.reload();
+        }, false);
+        ac.addEventListener("error", function () {
+            if (wasReady()) {
+                updating = false;
+                showMenu("cache update failed -- Start exploit still works");
+                return;
+            }
+            setCache("cache failed");
+            setState("CACHE FAILED", "bad");
+        }, false);
+        ac.addEventListener("obsolete", function () {
+            try { localStorage.removeItem(READY_KEY); } catch (e) {}
+            setCache("old cache dropped -- reloading to fetch the new one");
+            setState("CACHE OBSOLETE -- reloading...", "warn");
+            hideMenu();
+            setTimeout(function () { location.reload(); }, 400);
+        }, false);
 
-    hideMenu();
-    if (!navigator.onLine) {
-        setCache("offline and no cache yet");
-        setState("OFFLINE", "bad");
-        return;
-    }
-    if (uncached || ac.status === ac.CHECKING || ac.status === ac.DOWNLOADING) {
+        var idle = ac.status === ac.IDLE;
+        var uncached = ac.status === ac.UNCACHED;
+        if (wasReady() || idle) {
+            if (ac.status === ac.UPDATEREADY) {
+                try { ac.swapCache(); } catch (e) {}
+                location.reload();
+                return;
+            }
+            if (!navigator.onLine)
+                showMenu("offline -- from cache");
+            else
+                showMenu("cached -- Start exploit or Update cache");
+            return;
+        }
+        hideMenu();
+        if (!navigator.onLine) {
+            setCache("offline and no cache yet");
+            setState("OFFLINE", "bad");
+            return;
+        }
         setState("caching for first run...", "warn");
         setCache("starting cache...");
-        return;
+        if (!(uncached || ac.status === ac.CHECKING || ac.status === ac.DOWNLOADING)) {
+            try { ac.update(); } catch (e) {}
+        }
     }
-    setState("caching for first run...", "warn");
-    setCache("starting cache...");
-    try { ac.update(); } catch (e) {}
+
+    bindAC(ac);
 })();
 </script>
 </body>

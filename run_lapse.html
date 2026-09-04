@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" manifest="cache.appcache">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="cache-control" content="no-store">
 <title>ps4 lapse</title>
 <style>
   html, body { margin:0; padding:0; background:#0b0d10; color:#c8ced8;
@@ -29,14 +30,14 @@
 </div>
 <script>
 (function () {
-    var ok = false;
-    try {
-        if (localStorage.getItem("lapseGo") === "1") {
-            localStorage.removeItem("lapseGo");
-            ok = true;
-        }
-    } catch (e) {}
-    if (!ok) {
+    var GO_KEY = "lapseGo";
+    var GO_TTL = 20000;
+    var raw = null;
+    try { raw = localStorage.getItem(GO_KEY); } catch (e) {}
+    try { localStorage.removeItem(GO_KEY); } catch (e) {}
+    var t = parseInt(raw, 10);
+    var fresh = t && t > 1 && (Date.now() - t) >= 0 && (Date.now() - t) < GO_TTL;
+    if (!fresh) {
         location.replace("index.html");
         return;
     }
